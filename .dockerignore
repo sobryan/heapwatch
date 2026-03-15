@@ -1,0 +1,14 @@
+.git
+*.md
+hub/build
+hub/.gradle
+**/*.class
+flutter_frontend/build
+flutter_frontend/.dart_tool
+flutter_frontend/.packages
+flutter_frontend/android
+flutter_frontend/ios
+flutter_frontend/macos
+flutter_frontend/linux
+flutter_frontend/windows
+flutter_frontend/test

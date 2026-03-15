@@ -1,0 +1,25 @@
+server:
+  port: ${PORT:8080}
+
+spring:
+  application:
+    name: heapwatch-hub
+
+heapwatch:
+  ai:
+    api-key: ${ANTHROPIC_API_KEY:}
+    model: ${AI_MODEL:claude-sonnet-4-20250514}
+  discovery:
+    interval-seconds: ${DISCOVERY_INTERVAL:15}
+  jfr:
+    output-dir: ${JFR_OUTPUT_DIR:/tmp/heapwatch-jfr}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  level:
+    com.heapwatch: DEBUG
