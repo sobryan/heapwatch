@@ -8,6 +8,7 @@ import 'providers/alert_provider.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/profiler_page.dart';
 import 'pages/chat_page.dart';
+import 'pages/settings_page.dart';
 import 'widgets/jvm_sidebar_card.dart';
 import 'theme.dart';
 
@@ -123,6 +124,10 @@ class _AppShellState extends State<AppShell> {
                       Icons.smart_toy, alertProvider.activeCount, isBottom: true),
                   label: 'AI Advisor',
                 ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.settings),
+                  label: 'Settings',
+                ),
               ],
             )
           : null,
@@ -168,6 +173,7 @@ class _AppShellState extends State<AppShell> {
             _tabButton('Dashboard', 0),
             _tabButton('Profiler', 1),
             _tabButton('AI Advisor', 2),
+            _tabButton('Settings', 3),
           ],
 
           const Spacer(),
@@ -438,6 +444,8 @@ class _AppShellState extends State<AppShell> {
         return const ProfilerPage();
       case 2:
         return const ChatPage();
+      case 3:
+        return const SettingsPage();
       default:
         return DashboardPage(onTabSwitch: _switchTab);
     }

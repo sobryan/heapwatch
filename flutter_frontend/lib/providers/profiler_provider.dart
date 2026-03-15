@@ -24,6 +24,22 @@ class ProfilerProvider extends ChangeNotifier {
   int? _diagnosingPid;
   String? _diagnosisError;
 
+  // Thread Analysis
+  final Map<int, Map<String, dynamic>> _threadAnalyses = {};
+  int? _threadAnalysisPid;
+  String? _threadAnalysisError;
+
+  // GC Analysis
+  final Map<int, Map<String, dynamic>> _gcAnalyses = {};
+  int? _gcAnalysisPid;
+  String? _gcAnalysisError;
+
+  // Snapshots
+  final Map<int, List<Map<String, dynamic>>> _snapshots = {};
+  Map<String, dynamic>? _comparisonResult;
+  bool _snapshotLoading = false;
+  String? _snapshotError;
+
   ProfilerProvider(this._api);
 
   List<JfrRecording> get recordings => _recordings;
@@ -36,10 +52,20 @@ class ProfilerProvider extends ChangeNotifier {
   String? get analysisError => _analysisError;
   int? get diagnosingPid => _diagnosingPid;
   String? get diagnosisError => _diagnosisError;
+  int? get threadAnalysisPid => _threadAnalysisPid;
+  String? get threadAnalysisError => _threadAnalysisError;
+  int? get gcAnalysisPid => _gcAnalysisPid;
+  String? get gcAnalysisError => _gcAnalysisError;
+  bool get snapshotLoading => _snapshotLoading;
+  String? get snapshotError => _snapshotError;
+  Map<String, dynamic>? get comparisonResult => _comparisonResult;
 
   JfrAnalysis? getJfrAnalysis(String id) => _jfrAnalyses[id];
   HeapDumpAnalysis? getHeapDumpAnalysis(String id) => _heapDumpAnalyses[id];
   DiagnosisReport? getDiagnosisReport(int pid) => _diagnosisReports[pid];
+  Map<String, dynamic>? getThreadAnalysis(int pid) => _threadAnalyses[pid];
+  Map<String, dynamic>? getGcAnalysis(int pid) => _gcAnalyses[pid];
+  List<Map<String, dynamic>> getSnapshots(int pid) => _snapshots[pid] ?? [];
 
   void startPolling() {
     loadRecordings();
@@ -162,6 +188,76 @@ class ProfilerProvider extends ChangeNotifier {
       _diagnosisError = e.toString();
     }
     _diagnosingPid = null;
+    notifyListeners();
+  }
+
+  Future<void> fetchThreadAnalysis(int pid) async {
+    _threadAnalysisPid = pid;
+    _threadAnalysisError = null;
+    notifyListeners();
+    try {
+      final analysis = await _api.getThreadAnalysis(pid);
+      _threadAnalyses[pid] = analysis;
+    } catch (e) {
+      _threadAnalysisError = e.toString();
+    }
+    _threadAnalysisPid = null;
+    notifyListeners();
+  }
+
+  Future<void> fetchGcAnalysis(int pid) async {
+    _gcAnalysisPid = pid;
+    _gcAnalysisError = null;
+    notifyListeners();
+    try {
+      final analysis = await _api.getGcAnalysis(pid);
+      _gcAnalyses[pid] = analysis;
+    } catch (e) {
+      _gcAnalysisError = e.toString();
+    }
+    _gcAnalysisPid = null;
+    notifyListeners();
+  }
+
+  Future<void> captureSnapshot(int pid) async {
+    _snapshotLoading = true;
+    _snapshotError = null;
+    notifyListeners();
+    try {
+      await _api.captureSnapshot(pid);
+      await loadSnapshots(pid);
+    } catch (e) {
+      _snapshotError = e.toString();
+    }
+    _snapshotLoading = false;
+    notifyListeners();
+  }
+
+  Future<void> loadSnapshots(int pid) async {
+    try {
+      final snaps = await _api.listSnapshots(pid);
+      _snapshots[pid] = snaps;
+      notifyListeners();
+    } catch (e) {
+      // Silent fail
+    }
+  }
+
+  Future<void> compareSnapshots(int snap1, int snap2) async {
+    _snapshotLoading = true;
+    _snapshotError = null;
+    notifyListeners();
+    try {
+      _comparisonResult = await _api.compareSnapshots(snap1, snap2);
+    } catch (e) {
+      _snapshotError = e.toString();
+    }
+    _snapshotLoading = false;
+    notifyListeners();
+  }
+
+  void clearComparison() {
+    _comparisonResult = null;
     notifyListeners();
   }
 

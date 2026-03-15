@@ -23,6 +23,10 @@ class ApiService {
         res = await http.post(uri,
             headers: headers, body: body != null ? jsonEncode(body) : null);
         break;
+      case 'PUT':
+        res = await http.put(uri,
+            headers: headers, body: body != null ? jsonEncode(body) : null);
+        break;
       case 'DELETE':
         res = await http.delete(uri, headers: headers);
         break;
@@ -154,6 +158,45 @@ class ApiService {
   Future<DiagnosisReport> diagnose(int pid) async {
     final data = await _request('POST', '/api/diagnose/$pid');
     return DiagnosisReport.fromJson(data);
+  }
+
+  // Thread Analysis
+  Future<Map<String, dynamic>> getThreadAnalysis(int pid) async {
+    final data = await _request('GET', '/api/jvms/$pid/threads');
+    return Map<String, dynamic>.from(data);
+  }
+
+  // GC Analysis
+  Future<Map<String, dynamic>> getGcAnalysis(int pid) async {
+    final data = await _request('GET', '/api/jvms/$pid/gc');
+    return Map<String, dynamic>.from(data);
+  }
+
+  // Snapshots
+  Future<Map<String, dynamic>> captureSnapshot(int pid) async {
+    final data = await _request('POST', '/api/jvms/$pid/snapshot');
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<List<Map<String, dynamic>>> listSnapshots(int pid) async {
+    final data = await _request('GET', '/api/jvms/$pid/snapshots');
+    return (data as List).map((s) => Map<String, dynamic>.from(s)).toList();
+  }
+
+  Future<Map<String, dynamic>> compareSnapshots(int snapshot1, int snapshot2) async {
+    final data = await _request('GET', '/api/compare?snapshot1=$snapshot1&snapshot2=$snapshot2');
+    return Map<String, dynamic>.from(data);
+  }
+
+  // Settings
+  Future<Map<String, dynamic>> getSettings() async {
+    final data = await _request('GET', '/api/settings');
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> updateSettings(Map<String, dynamic> settings) async {
+    final data = await _request('PUT', '/api/settings', body: settings);
+    return Map<String, dynamic>.from(data);
   }
 
   // Chat
