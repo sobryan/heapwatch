@@ -5,11 +5,14 @@ import 'providers/jvm_provider.dart';
 import 'providers/profiler_provider.dart';
 import 'providers/chat_provider.dart';
 import 'providers/alert_provider.dart';
+import 'providers/notification_provider.dart';
+import 'providers/theme_provider.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/profiler_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/settings_page.dart';
 import 'widgets/jvm_sidebar_card.dart';
+import 'widgets/notification_panel.dart';
 import 'theme.dart';
 
 void main() {
@@ -29,12 +32,18 @@ class HeapWatchApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => ProfilerProvider(apiService)),
         ChangeNotifierProvider(create: (_) => ChatProvider(apiService)),
         ChangeNotifierProvider(create: (_) => AlertProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => NotificationProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => ThemeProvider()),
       ],
-      child: MaterialApp(
-        title: 'HeapWatch \u2014 JVM Performance Monitor',
-        theme: appTheme,
-        debugShowCheckedModeBanner: false,
-        home: const AppShell(),
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, _) {
+          return MaterialApp(
+            title: 'HeapWatch \u2014 JVM Performance Monitor',
+            theme: themeProvider.isDark ? appTheme : lightAppTheme,
+            debugShowCheckedModeBanner: false,
+            home: const AppShell(),
+          );
+        },
       ),
     );
   }
@@ -49,6 +58,7 @@ class AppShell extends StatefulWidget {
 
 class _AppShellState extends State<AppShell> {
   int _tabIndex = 0;
+  bool _showNotifications = false;
 
   void _switchTab(int index) {
     setState(() {
@@ -63,40 +73,61 @@ class _AppShellState extends State<AppShell> {
     });
   }
 
+  void _toggleNotifications() {
+    setState(() {
+      _showNotifications = !_showNotifications;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final jvmProvider = context.watch<JvmProvider>();
     final alertProvider = context.watch<AlertProvider>();
+    final notifProvider = context.watch<NotificationProvider>();
     final screenWidth = MediaQuery.of(context).size.width;
     final isWide = screenWidth > 768;
     final isNarrow = screenWidth < 600;
 
     return Scaffold(
-      body: Column(
+      body: Stack(
         children: [
-          // Top Nav Bar
-          _buildNavBar(jvmProvider, alertProvider, isNarrow),
+          Column(
+            children: [
+              // Top Nav Bar
+              _buildNavBar(jvmProvider, alertProvider, notifProvider, isNarrow),
 
-          // Main content area
-          Expanded(
-            child: isWide
-                ? Row(
-                    children: [
-                      // Sidebar
-                      _buildSidebar(jvmProvider),
-                      // Content
-                      Expanded(child: _buildContent()),
-                    ],
-                  )
-                : Column(
-                    children: [
-                      // Collapsed sidebar on mobile
-                      _buildMobileSidebar(jvmProvider),
-                      // Content
-                      Expanded(child: _buildContent()),
-                    ],
-                  ),
+              // Main content area
+              Expanded(
+                child: isWide
+                    ? Row(
+                        children: [
+                          // Sidebar
+                          _buildSidebar(jvmProvider),
+                          // Content
+                          Expanded(child: _buildContent()),
+                        ],
+                      )
+                    : Column(
+                        children: [
+                          // Collapsed sidebar on mobile
+                          _buildMobileSidebar(jvmProvider),
+                          // Content
+                          Expanded(child: _buildContent()),
+                        ],
+                      ),
+              ),
+            ],
           ),
+
+          // Notification panel overlay
+          if (_showNotifications)
+            Positioned(
+              top: 56,
+              right: 16,
+              child: NotificationPanel(
+                onClose: () => setState(() => _showNotifications = false),
+              ),
+            ),
         ],
       ),
       // Bottom nav for narrow/portrait screens
@@ -104,9 +135,9 @@ class _AppShellState extends State<AppShell> {
           ? BottomNavigationBar(
               currentIndex: _tabIndex,
               onTap: _switchTab,
-              backgroundColor: surfaceColor,
+              backgroundColor: getSurfaceColor(context),
               selectedItemColor: primaryColor,
-              unselectedItemColor: textSecondary,
+              unselectedItemColor: getTextSecondary(context),
               type: BottomNavigationBarType.fixed,
               selectedFontSize: 12,
               unselectedFontSize: 12,
@@ -134,7 +165,8 @@ class _AppShellState extends State<AppShell> {
     );
   }
 
-  Widget _buildNavBar(JvmProvider jvmProvider, AlertProvider alertProvider, bool isNarrow) {
+  Widget _buildNavBar(JvmProvider jvmProvider, AlertProvider alertProvider,
+      NotificationProvider notifProvider, bool isNarrow) {
     final statusDotColor = jvmProvider.overallStatus == 'red'
         ? redColor
         : jvmProvider.overallStatus == 'yellow'
@@ -144,9 +176,9 @@ class _AppShellState extends State<AppShell> {
     return Container(
       height: 56,
       padding: EdgeInsets.symmetric(horizontal: isNarrow ? 12 : 24),
-      decoration: const BoxDecoration(
-        color: surfaceColor,
-        border: Border(bottom: BorderSide(color: borderColor)),
+      decoration: BoxDecoration(
+        color: getSurfaceColor(context),
+        border: Border(bottom: BorderSide(color: getBorderColor(context))),
       ),
       child: Row(
         children: [
@@ -177,6 +209,22 @@ class _AppShellState extends State<AppShell> {
           ],
 
           const Spacer(),
+
+          // Notification bell
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: InkWell(
+              onTap: _toggleNotifications,
+              borderRadius: BorderRadius.circular(20),
+              child: Padding(
+                padding: const EdgeInsets.all(6),
+                child: _buildAlertBadgeIcon(
+                  Icons.notifications_outlined,
+                  notifProvider.unreadCount,
+                ),
+              ),
+            ),
+          ),
 
           // Alert indicator
           if (alertProvider.activeCount > 0)
@@ -228,9 +276,9 @@ class _AppShellState extends State<AppShell> {
                 isNarrow
                     ? '${jvmProvider.jvms.length} JVMs'
                     : '${jvmProvider.jvms.length} JVMs monitored',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 13,
-                  color: textSecondary,
+                  color: getTextSecondary(context),
                 ),
               ),
             ],
@@ -280,7 +328,7 @@ class _AppShellState extends State<AppShell> {
         style: TextButton.styleFrom(
           backgroundColor:
               active ? primaryColor.withValues(alpha: 0.1) : Colors.transparent,
-          foregroundColor: active ? primaryColor : textSecondary,
+          foregroundColor: active ? primaryColor : getTextSecondary(context),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(6),
@@ -298,9 +346,9 @@ class _AppShellState extends State<AppShell> {
   Widget _buildSidebar(JvmProvider jvmProvider) {
     return Container(
       width: 300,
-      decoration: const BoxDecoration(
-        color: surfaceColor,
-        border: Border(right: BorderSide(color: borderColor)),
+      decoration: BoxDecoration(
+        color: getSurfaceColor(context),
+        border: Border(right: BorderSide(color: getBorderColor(context))),
       ),
       child: Column(
         children: [
@@ -310,12 +358,12 @@ class _AppShellState extends State<AppShell> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'JVM Processes',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: textSecondary,
+                    color: getTextSecondary(context),
                   ),
                 ),
                 OutlinedButton(
@@ -350,10 +398,10 @@ class _AppShellState extends State<AppShell> {
                           ),
                         ),
                         const SizedBox(height: 8),
-                        const Text(
+                        Text(
                           'Scanning for JVMs...',
                           style:
-                              TextStyle(fontSize: 13, color: textSecondary),
+                              TextStyle(fontSize: 13, color: getTextSecondary(context)),
                         ),
                       ],
                     ),
@@ -380,9 +428,9 @@ class _AppShellState extends State<AppShell> {
   Widget _buildMobileSidebar(JvmProvider jvmProvider) {
     return Container(
       height: 200,
-      decoration: const BoxDecoration(
-        color: surfaceColor,
-        border: Border(bottom: BorderSide(color: borderColor)),
+      decoration: BoxDecoration(
+        color: getSurfaceColor(context),
+        border: Border(bottom: BorderSide(color: getBorderColor(context))),
       ),
       child: Column(
         children: [
@@ -391,12 +439,12 @@ class _AppShellState extends State<AppShell> {
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'JVM Processes',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w600,
-                    color: textSecondary,
+                    color: getTextSecondary(context),
                   ),
                 ),
                 OutlinedButton(

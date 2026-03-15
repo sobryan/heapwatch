@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 
@@ -155,6 +156,37 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const SizedBox(height: 16),
           ],
+
+          // Appearance Section
+          _buildSection(
+            title: 'Appearance',
+            icon: Icons.palette,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    'Dark Mode',
+                    style: TextStyle(fontSize: 13, color: getTextColor(context)),
+                  ),
+                  const Spacer(),
+                  Consumer<ThemeProvider>(
+                    builder: (context, themeProvider, _) {
+                      return Switch(
+                        value: themeProvider.isDark,
+                        onChanged: (v) => themeProvider.setDark(v),
+                        activeTrackColor: primaryColor,
+                      );
+                    },
+                  ),
+                ],
+              ),
+              Text(
+                'Toggle between dark and light theme.',
+                style: TextStyle(fontSize: 12, color: getTextSecondary(context)),
+              ),
+            ],
+          ),
+          const SizedBox(height: 20),
 
           // Discovery Section
           _buildSection(

@@ -213,4 +213,34 @@ class ApiService {
   Future<void> clearChatHistory() async {
     await _request('DELETE', '/api/chat/history');
   }
+
+  // Histogram Diff
+  Future<Map<String, dynamic>> captureHeapBaseline(int pid) async {
+    final data = await _request('POST', '/api/jvms/$pid/heap-baseline');
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<HistogramDiff> getHeapDiff(int pid) async {
+    final data = await _request('GET', '/api/jvms/$pid/heap-diff');
+    return HistogramDiff.fromJson(data);
+  }
+
+  // Notifications
+  Future<Map<String, dynamic>> getNotifications() async {
+    final data = await _request('GET', '/api/notifications');
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<void> deleteNotification(String id) async {
+    await _request('DELETE', '/api/notifications/$id');
+  }
+
+  Future<void> markAllNotificationsRead() async {
+    await _request('POST', '/api/notifications/read-all');
+  }
+
+  Future<int> getUnreadNotificationCount() async {
+    final data = await _request('GET', '/api/notifications/unread-count');
+    return (data['unreadCount'] ?? 0).toInt();
+  }
 }

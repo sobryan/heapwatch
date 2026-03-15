@@ -261,6 +261,51 @@ class _ProfilerPageState extends State<ProfilerPage> {
                                   horizontal: 16, vertical: 8),
                             ),
                           ),
+                          FilledButton.icon(
+                            onPressed: profiler.baselinePid == selectedJvm.pid
+                                ? null
+                                : () => profiler.captureHeapBaseline(selectedJvm.pid),
+                            icon: profiler.baselinePid == selectedJvm.pid
+                                ? const SizedBox(
+                                    width: 14,
+                                    height: 14,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2, color: Colors.white),
+                                  )
+                                : const Icon(Icons.flag, size: 14),
+                            label: const Text('Baseline'),
+                            style: FilledButton.styleFrom(
+                              backgroundColor: const Color(0xFF6366F1),
+                              foregroundColor: Colors.white,
+                              textStyle: const TextStyle(
+                                  fontSize: 13, fontWeight: FontWeight.w600),
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                            ),
+                          ),
+                          if (profiler.hasBaseline(selectedJvm.pid))
+                            FilledButton.icon(
+                              onPressed: profiler.diffPid == selectedJvm.pid
+                                  ? null
+                                  : () => profiler.fetchHeapDiff(selectedJvm.pid),
+                              icon: profiler.diffPid == selectedJvm.pid
+                                  ? const SizedBox(
+                                      width: 14,
+                                      height: 14,
+                                      child: CircularProgressIndicator(
+                                          strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : const Icon(Icons.compare_arrows, size: 14),
+                              label: const Text('Diff'),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: const Color(0xFFEC4899),
+                                foregroundColor: Colors.white,
+                                textStyle: const TextStyle(
+                                    fontSize: 13, fontWeight: FontWeight.w600),
+                                padding: const EdgeInsets.symmetric(
+                                    horizontal: 16, vertical: 8),
+                              ),
+                            ),
                         ],
                       ),
                     ],
@@ -424,6 +469,31 @@ class _ProfilerPageState extends State<ProfilerPage> {
             Padding(
               padding: const EdgeInsets.only(top: 24),
               child: _buildComparisonPanel(profiler.comparisonResult!),
+            ),
+
+          // Histogram Diff Results
+          if (selectedJvm != null && profiler.getHistogramDiff(selectedJvm.pid) != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 24),
+              child: _buildHistogramDiffPanel(profiler.getHistogramDiff(selectedJvm.pid)!),
+            ),
+
+          // Histogram error
+          if (profiler.histogramError != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: redColor.withValues(alpha: 0.1),
+                  border: Border.all(color: redColor.withValues(alpha: 0.3)),
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Text(
+                  profiler.histogramError!,
+                  style: const TextStyle(color: redColor, fontSize: 13),
+                ),
+              ),
             ),
 
           // Thread analysis error
@@ -1068,6 +1138,82 @@ class _ProfilerPageState extends State<ProfilerPage> {
     );
   }
 
+  void _exportDiagnosisReport(DiagnosisReport report) {
+    final html = StringBuffer();
+    html.writeln('<!DOCTYPE html><html><head>');
+    html.writeln('<meta charset="utf-8">');
+    html.writeln('<title>HeapWatch Diagnosis Report - ${report.processName}</title>');
+    html.writeln('<style>');
+    html.writeln('body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0F172A; color: #F1F5F9; max-width: 900px; margin: 0 auto; padding: 32px; }');
+    html.writeln('h1 { color: #38BDF8; font-size: 24px; } h2 { color: #94A3B8; font-size: 18px; margin-top: 24px; }');
+    html.writeln('.score { font-size: 48px; font-weight: bold; text-align: center; padding: 20px; border-radius: 12px; }');
+    html.writeln('.score.good { color: #4ADE80; background: rgba(74,222,128,0.1); }');
+    html.writeln('.score.warn { color: #FBBF24; background: rgba(251,191,36,0.1); }');
+    html.writeln('.score.bad { color: #F87171; background: rgba(248,113,113,0.1); }');
+    html.writeln('.card { background: #1E293B; border: 1px solid #475569; border-radius: 8px; padding: 16px; margin: 8px 0; }');
+    html.writeln('.issue { border-left: 3px solid; padding-left: 12px; margin: 8px 0; }');
+    html.writeln('.critical { border-color: #F87171; } .warning { border-color: #FBBF24; } .info { border-color: #94A3B8; }');
+    html.writeln('.stat { display: inline-block; margin-right: 24px; } .stat-val { font-size: 20px; font-weight: bold; color: #38BDF8; } .stat-label { font-size: 12px; color: #94A3B8; }');
+    html.writeln('.meta { color: #64748B; font-size: 12px; margin-top: 32px; }');
+    html.writeln('.rec { background: rgba(56,189,248,0.05); border: 1px solid rgba(56,189,248,0.15); border-radius: 8px; padding: 12px; margin: 8px 0; }');
+    html.writeln('code { background: #0F172A; border: 1px solid #475569; border-radius: 4px; padding: 8px; display: block; color: #4ADE80; font-size: 12px; margin-top: 8px; white-space: pre-wrap; }');
+    html.writeln('@media print { body { background: white; color: #1E293B; } .card { background: #F8FAFC; border-color: #E2E8F0; } }');
+    html.writeln('</style></head><body>');
+    html.writeln('<h1>HeapWatch Diagnosis Report</h1>');
+    html.writeln('<p>Process: <strong>${report.processName}</strong> (PID ${report.pid})</p>');
+    html.writeln('<p>Generated: ${report.timestamp}</p>');
+
+    final scoreClass = report.healthScore >= 80 ? 'good' : report.healthScore >= 50 ? 'warn' : 'bad';
+    html.writeln('<div class="score $scoreClass">${report.healthScore}/100</div>');
+    html.writeln('<p style="text-align:center">${report.healthAssessment}</p>');
+
+    if (report.snapshot != null) {
+      html.writeln('<h2>JVM Snapshot</h2>');
+      html.writeln('<div class="card">');
+      html.writeln('<div class="stat"><div class="stat-val">${report.snapshot!.heapUsagePercent.toStringAsFixed(0)}%</div><div class="stat-label">Heap Usage</div></div>');
+      html.writeln('<div class="stat"><div class="stat-val">${report.snapshot!.threadCount}</div><div class="stat-label">Threads</div></div>');
+      html.writeln('<div class="stat"><div class="stat-val">${report.snapshot!.status}</div><div class="stat-label">Status</div></div>');
+      html.writeln('<div class="stat"><div class="stat-val">${report.snapshot!.gcCollectionCount}</div><div class="stat-label">GC Collections</div></div>');
+      html.writeln('</div>');
+    }
+
+    if (report.issues.isNotEmpty) {
+      html.writeln('<h2>Issues Found (${report.issues.length})</h2>');
+      for (final issue in report.issues) {
+        final cls = issue.severity == 'CRITICAL' ? 'critical' : issue.severity == 'WARNING' ? 'warning' : 'info';
+        html.writeln('<div class="issue $cls">');
+        html.writeln('<strong>[${issue.severity}] ${issue.title}</strong> (Impact: ${issue.impactScore}/10)<br>');
+        html.writeln('${issue.description}');
+        if (issue.affectedMethod != null && issue.affectedMethod!.isNotEmpty) {
+          html.writeln('<br><em>Method: ${issue.affectedMethod}</em>');
+        }
+        html.writeln('</div>');
+      }
+    }
+
+    if (report.recommendations.isNotEmpty) {
+      html.writeln('<h2>Recommendations (${report.recommendations.length})</h2>');
+      for (final rec in report.recommendations) {
+        html.writeln('<div class="rec">');
+        html.writeln('<strong>${rec.title}</strong><br>${rec.description}');
+        if (rec.suggestedFix != null && rec.suggestedFix!.isNotEmpty) {
+          html.writeln('<code>${rec.suggestedFix}</code>');
+        }
+        if (rec.estimatedImpact != null && rec.estimatedImpact!.isNotEmpty) {
+          html.writeln('<br><em>Expected impact: ${rec.estimatedImpact}</em>');
+        }
+        html.writeln('</div>');
+      }
+    }
+
+    html.writeln('<div class="meta">Generated by HeapWatch &mdash; JVM Performance Monitor</div>');
+    html.writeln('</body></html>');
+
+    // Open in new tab using data URI
+    final dataUri = 'data:text/html;charset=utf-8,${Uri.encodeComponent(html.toString())}';
+    web.window.open(dataUri, '_blank');
+  }
+
   Widget _buildDiagnosisPanel(DiagnosisReport report) {
     final healthColor = report.healthScore >= 80
         ? greenColor
@@ -1077,6 +1223,18 @@ class _ProfilerPageState extends State<ProfilerPage> {
 
     return _buildPanel(
       title: 'Diagnosis: ${report.processName} (PID ${report.pid})',
+      trailing: OutlinedButton.icon(
+        onPressed: () => _exportDiagnosisReport(report),
+        icon: const Icon(Icons.open_in_new, size: 14),
+        label: const Text('Export'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: primaryColor,
+          side: const BorderSide(color: primaryColor),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          textStyle: const TextStyle(fontSize: 12),
+          minimumSize: const Size(0, 28),
+        ),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -1850,7 +2008,7 @@ class _ProfilerPageState extends State<ProfilerPage> {
     );
   }
 
-  Widget _buildPanel({required String title, required Widget child}) {
+  Widget _buildPanel({required String title, required Widget child, Widget? trailing}) {
     return Container(
       width: double.infinity,
       decoration: BoxDecoration(
@@ -1862,16 +2020,163 @@ class _ProfilerPageState extends State<ProfilerPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 15,
-              fontWeight: FontWeight.w600,
-              color: textColor,
-            ),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: textColor,
+                  ),
+                ),
+              ),
+              if (trailing != null) trailing,
+            ],
           ),
           const SizedBox(height: 12),
           child,
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHistogramDiffPanel(HistogramDiff diff) {
+    return _buildPanel(
+      title: 'Class Histogram Diff (PID ${diff.pid})',
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Baseline: ${timeAgo(diff.baselineTimestamp)} \u2192 Current: ${timeAgo(diff.currentTimestamp)}',
+            style: const TextStyle(color: textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+
+          // Growing objects
+          if (diff.growing.isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.trending_up, color: redColor, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Growing (${diff.growing.length})',
+                  style: const TextStyle(
+                      color: redColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...diff.growing.take(15).map((entry) => _buildDiffRow(entry, true)),
+            const SizedBox(height: 16),
+          ],
+
+          // Shrinking objects
+          if (diff.shrinking.isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.trending_down, color: greenColor, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Shrinking (${diff.shrinking.length})',
+                  style: const TextStyle(
+                      color: greenColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...diff.shrinking.take(15).map((entry) => _buildDiffRow(entry, false)),
+            const SizedBox(height: 16),
+          ],
+
+          // New classes
+          if (diff.newClasses.isNotEmpty) ...[
+            Row(
+              children: [
+                const Icon(Icons.fiber_new, color: yellowColor, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'New Classes (${diff.newClasses.length})',
+                  style: const TextStyle(
+                      color: yellowColor,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ...diff.newClasses.take(10).map((entry) => _buildDiffRow(entry, true)),
+          ],
+
+          if (diff.growing.isEmpty && diff.shrinking.isEmpty && diff.newClasses.isEmpty)
+            const Text(
+              'No significant changes between baseline and current histogram.',
+              style: TextStyle(color: textSecondary, fontSize: 13),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDiffRow(HistogramDiffEntry entry, bool isGrowing) {
+    final color = isGrowing ? redColor : greenColor;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 4),
+      child: Row(
+        children: [
+          Expanded(
+            flex: 3,
+            child: Text(
+              entry.className,
+              style: const TextStyle(
+                  color: textColor,
+                  fontSize: 11,
+                  fontFamily: 'monospace'),
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 70,
+            child: Text(
+              entry.deltaBytesFormatted,
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color,
+                fontWeight: FontWeight.w600,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 60,
+            child: Text(
+              '${entry.deltaInstances >= 0 ? "+" : ""}${entry.deltaInstances}',
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: color.withValues(alpha: 0.7),
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 8),
+          SizedBox(
+            width: 65,
+            child: Text(
+              entry.currentBytesFormatted,
+              textAlign: TextAlign.right,
+              style: const TextStyle(
+                color: textSecondary,
+                fontSize: 11,
+              ),
+            ),
+          ),
         ],
       ),
     );

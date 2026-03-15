@@ -34,6 +34,13 @@ class ProfilerProvider extends ChangeNotifier {
   int? _gcAnalysisPid;
   String? _gcAnalysisError;
 
+  // Histogram Diff
+  final Map<int, HistogramDiff> _histogramDiffs = {};
+  final Set<int> _hasBaseline = {};
+  int? _baselinePid;
+  int? _diffPid;
+  String? _histogramError;
+
   // Snapshots
   final Map<int, List<Map<String, dynamic>>> _snapshots = {};
   Map<String, dynamic>? _comparisonResult;
@@ -56,6 +63,9 @@ class ProfilerProvider extends ChangeNotifier {
   String? get threadAnalysisError => _threadAnalysisError;
   int? get gcAnalysisPid => _gcAnalysisPid;
   String? get gcAnalysisError => _gcAnalysisError;
+  int? get baselinePid => _baselinePid;
+  int? get diffPid => _diffPid;
+  String? get histogramError => _histogramError;
   bool get snapshotLoading => _snapshotLoading;
   String? get snapshotError => _snapshotError;
   Map<String, dynamic>? get comparisonResult => _comparisonResult;
@@ -66,6 +76,8 @@ class ProfilerProvider extends ChangeNotifier {
   Map<String, dynamic>? getThreadAnalysis(int pid) => _threadAnalyses[pid];
   Map<String, dynamic>? getGcAnalysis(int pid) => _gcAnalyses[pid];
   List<Map<String, dynamic>> getSnapshots(int pid) => _snapshots[pid] ?? [];
+  HistogramDiff? getHistogramDiff(int pid) => _histogramDiffs[pid];
+  bool hasBaseline(int pid) => _hasBaseline.contains(pid);
 
   void startPolling() {
     loadRecordings();
@@ -258,6 +270,34 @@ class ProfilerProvider extends ChangeNotifier {
 
   void clearComparison() {
     _comparisonResult = null;
+    notifyListeners();
+  }
+
+  Future<void> captureHeapBaseline(int pid) async {
+    _baselinePid = pid;
+    _histogramError = null;
+    notifyListeners();
+    try {
+      await _api.captureHeapBaseline(pid);
+      _hasBaseline.add(pid);
+    } catch (e) {
+      _histogramError = e.toString();
+    }
+    _baselinePid = null;
+    notifyListeners();
+  }
+
+  Future<void> fetchHeapDiff(int pid) async {
+    _diffPid = pid;
+    _histogramError = null;
+    notifyListeners();
+    try {
+      final diff = await _api.getHeapDiff(pid);
+      _histogramDiffs[pid] = diff;
+    } catch (e) {
+      _histogramError = e.toString();
+    }
+    _diffPid = null;
     notifyListeners();
   }
 

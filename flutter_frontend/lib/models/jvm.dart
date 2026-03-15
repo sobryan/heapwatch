@@ -568,6 +568,113 @@ class JvmSnapshot {
   }
 }
 
+/// Notification from the notification center
+class AppNotification {
+  final String id;
+  final String type;
+  final String title;
+  final String message;
+  final String severity;
+  final String timestamp;
+  final bool read;
+
+  AppNotification({
+    required this.id,
+    required this.type,
+    required this.title,
+    required this.message,
+    required this.severity,
+    required this.timestamp,
+    this.read = false,
+  });
+
+  factory AppNotification.fromJson(Map<String, dynamic> json) {
+    return AppNotification(
+      id: json['id'] ?? '',
+      type: json['type'] ?? 'INFO',
+      title: json['title'] ?? '',
+      message: json['message'] ?? '',
+      severity: json['severity'] ?? 'INFO',
+      timestamp: json['timestamp'] ?? '',
+      read: json['read'] ?? false,
+    );
+  }
+}
+
+/// Histogram diff result
+class HistogramDiffEntry {
+  final String className;
+  final int baselineInstances;
+  final int baselineBytes;
+  final int currentInstances;
+  final int currentBytes;
+  final int deltaInstances;
+  final int deltaBytes;
+  final String currentBytesFormatted;
+  final String deltaBytesFormatted;
+
+  HistogramDiffEntry({
+    required this.className,
+    this.baselineInstances = 0,
+    this.baselineBytes = 0,
+    this.currentInstances = 0,
+    this.currentBytes = 0,
+    this.deltaInstances = 0,
+    this.deltaBytes = 0,
+    this.currentBytesFormatted = '',
+    this.deltaBytesFormatted = '',
+  });
+
+  factory HistogramDiffEntry.fromJson(Map<String, dynamic> json) {
+    return HistogramDiffEntry(
+      className: json['className'] ?? '',
+      baselineInstances: (json['baselineInstances'] ?? 0).toInt(),
+      baselineBytes: (json['baselineBytes'] ?? 0).toInt(),
+      currentInstances: (json['currentInstances'] ?? 0).toInt(),
+      currentBytes: (json['currentBytes'] ?? 0).toInt(),
+      deltaInstances: (json['deltaInstances'] ?? 0).toInt(),
+      deltaBytes: (json['deltaBytes'] ?? 0).toInt(),
+      currentBytesFormatted: json['currentBytesFormatted'] ?? '',
+      deltaBytesFormatted: json['deltaBytesFormatted'] ?? '',
+    );
+  }
+}
+
+class HistogramDiff {
+  final int pid;
+  final String baselineTimestamp;
+  final String currentTimestamp;
+  final List<HistogramDiffEntry> growing;
+  final List<HistogramDiffEntry> shrinking;
+  final List<HistogramDiffEntry> newClasses;
+
+  HistogramDiff({
+    required this.pid,
+    required this.baselineTimestamp,
+    required this.currentTimestamp,
+    required this.growing,
+    required this.shrinking,
+    required this.newClasses,
+  });
+
+  factory HistogramDiff.fromJson(Map<String, dynamic> json) {
+    return HistogramDiff(
+      pid: (json['pid'] ?? 0).toInt(),
+      baselineTimestamp: json['baselineTimestamp'] ?? '',
+      currentTimestamp: json['currentTimestamp'] ?? '',
+      growing: (json['growing'] as List? ?? [])
+          .map((e) => HistogramDiffEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      shrinking: (json['shrinking'] as List? ?? [])
+          .map((e) => HistogramDiffEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      newClasses: (json['newClasses'] as List? ?? [])
+          .map((e) => HistogramDiffEntry.fromJson(e as Map<String, dynamic>))
+          .toList(),
+    );
+  }
+}
+
 /// Alert rule configuration
 class AlertRule {
   final String id;

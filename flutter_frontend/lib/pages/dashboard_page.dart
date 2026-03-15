@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/jvm.dart';
 import '../providers/jvm_provider.dart';
 import '../providers/alert_provider.dart';
+import '../providers/profiler_provider.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
 import '../utils.dart';
@@ -19,43 +20,47 @@ class DashboardPage extends StatefulWidget {
 }
 
 class _DashboardPageState extends State<DashboardPage> {
-  MetricsHistory? _history;
-  bool _loadingHistory = false;
+  // Per-JVM metrics histories
+  final Map<int, MetricsHistory> _jvmHistories = {};
+  bool _loadingHistories = false;
 
   @override
   void initState() {
     super.initState();
-    _loadTrends();
+    _loadAllTrends();
   }
 
-  void _loadTrends() async {
+  void _loadAllTrends() async {
     final jvmProvider = context.read<JvmProvider>();
-    final selectedJvm = jvmProvider.selectedJvm;
-    if (selectedJvm == null && jvmProvider.jvms.isEmpty) return;
+    if (jvmProvider.jvms.isEmpty) return;
 
-    final targetPid = selectedJvm?.pid ?? (jvmProvider.jvms.isNotEmpty ? jvmProvider.jvms.first.pid : null);
-    if (targetPid == null) return;
+    setState(() => _loadingHistories = true);
+    final api = context.read<ApiService>();
 
-    setState(() => _loadingHistory = true);
-    try {
-      final api = context.read<ApiService>();
-      final history = await api.getMetricsHistory(targetPid);
-      if (mounted) {
-        setState(() {
-          _history = history;
-          _loadingHistory = false;
-        });
+    for (final jvm in jvmProvider.jvms) {
+      try {
+        final history = await api.getMetricsHistory(jvm.pid);
+        if (mounted) {
+          _jvmHistories[jvm.pid] = history;
+        }
+      } catch (_) {
+        // skip failed
       }
-    } catch (e) {
-      if (mounted) setState(() => _loadingHistory = false);
     }
+    if (mounted) setState(() => _loadingHistories = false);
   }
 
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<JvmProvider>();
     final alertProvider = context.watch<AlertProvider>();
+    final profiler = context.watch<ProfilerProvider>();
     final jvms = provider.jvms;
+
+    // Compute system-level aggregates
+    final activeRecordings = profiler.recordings
+        .where((r) => r.status == 'RECORDING')
+        .length;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
@@ -66,26 +71,28 @@ class _DashboardPageState extends State<DashboardPage> {
             children: [
               Icon(Icons.dashboard, color: primaryColor, size: 20),
               const SizedBox(width: 8),
-              const Text(
+              Text(
                 'Dashboard',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
-                  color: textColor,
+                  color: getTextColor(context),
                 ),
               ),
             ],
           ),
           const SizedBox(height: 16),
 
-          // Stat cards
+          // System Summary Cards
           LayoutBuilder(
             builder: (context, constraints) {
-              final crossCount = constraints.maxWidth > 900
-                  ? 5
-                  : constraints.maxWidth > 600
-                      ? 3
-                      : 2;
+              final crossCount = constraints.maxWidth > 1100
+                  ? 6
+                  : constraints.maxWidth > 800
+                      ? 4
+                      : constraints.maxWidth > 500
+                          ? 3
+                          : 2;
               return GridView.count(
                 crossAxisCount: crossCount,
                 shrinkWrap: true,
@@ -117,11 +124,42 @@ class _DashboardPageState extends State<DashboardPage> {
                     value: '${provider.totalThreads}',
                     label: 'Total Threads',
                   ),
+                  StatCard(
+                    value: '${alertProvider.activeCount}',
+                    label: 'Active Alerts',
+                    valueColor: alertProvider.activeCount > 0 ? redColor : greenColor,
+                  ),
                 ],
               );
             },
           ),
           const SizedBox(height: 24),
+
+          // Per-JVM Real-time Metric Cards with Mini Sparklines
+          if (jvms.isNotEmpty) ...[
+            _buildSectionHeader('JVM Health Overview', Icons.monitor_heart),
+            const SizedBox(height: 12),
+            LayoutBuilder(
+              builder: (context, constraints) {
+                final cardWidth = constraints.maxWidth > 900
+                    ? (constraints.maxWidth - 32) / 3
+                    : constraints.maxWidth > 600
+                        ? (constraints.maxWidth - 16) / 2
+                        : constraints.maxWidth;
+                return Wrap(
+                  spacing: 16,
+                  runSpacing: 16,
+                  children: jvms.map((jvm) {
+                    return SizedBox(
+                      width: cardWidth,
+                      child: _buildJvmMetricCard(jvm),
+                    );
+                  }).toList(),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+          ],
 
           // Active Alerts Section
           if (alertProvider.alerts.isNotEmpty) ...[
@@ -129,28 +167,49 @@ class _DashboardPageState extends State<DashboardPage> {
             const SizedBox(height: 24),
           ],
 
-          // Trends Section
-          _buildTrendsPanel(provider),
-          const SizedBox(height: 24),
-
           // JVM Table
           Container(
             decoration: BoxDecoration(
-              color: surfaceColor,
-              border: Border.all(color: borderColor),
+              color: getSurfaceColor(context),
+              border: Border.all(color: getBorderColor(context)),
               borderRadius: BorderRadius.circular(10),
             ),
             padding: const EdgeInsets.all(20),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Text(
-                  'All JVM Processes',
-                  style: TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: textColor,
-                  ),
+                Row(
+                  children: [
+                    Text(
+                      'All JVM Processes',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: getTextColor(context),
+                      ),
+                    ),
+                    const Spacer(),
+                    OutlinedButton.icon(
+                      onPressed: _loadingHistories ? null : _loadAllTrends,
+                      icon: _loadingHistories
+                          ? const SizedBox(
+                              width: 12,
+                              height: 12,
+                              child: CircularProgressIndicator(
+                                  strokeWidth: 2, color: primaryColor),
+                            )
+                          : const Icon(Icons.refresh, size: 14),
+                      label: const Text('Refresh Trends'),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: primaryColor,
+                        side: const BorderSide(color: primaryColor),
+                        padding:
+                            const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                        textStyle: const TextStyle(fontSize: 12),
+                        minimumSize: const Size(0, 28),
+                      ),
+                    ),
+                  ],
                 ),
                 const SizedBox(height: 12),
                 if (jvms.isEmpty)
@@ -168,9 +227,9 @@ class _DashboardPageState extends State<DashboardPage> {
                             ),
                           ),
                           const SizedBox(height: 8),
-                          const Text(
+                          Text(
                             'Discovering JVM processes...',
-                            style: TextStyle(color: textSecondary),
+                            style: TextStyle(color: getTextSecondary(context)),
                           ),
                         ],
                       ),
@@ -180,13 +239,13 @@ class _DashboardPageState extends State<DashboardPage> {
                   SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: DataTable(
-                      headingTextStyle: const TextStyle(
-                        color: textSecondary,
+                      headingTextStyle: TextStyle(
+                        color: getTextSecondary(context),
                         fontWeight: FontWeight.w600,
                         fontSize: 13,
                       ),
-                      dataTextStyle: const TextStyle(
-                        color: textColor,
+                      dataTextStyle: TextStyle(
+                        color: getTextColor(context),
                         fontSize: 13,
                       ),
                       columnSpacing: 24,
@@ -222,7 +281,7 @@ class _DashboardPageState extends State<DashboardPage> {
                               Text(
                                 '${jvm.pid}',
                                 style:
-                                    const TextStyle(color: textSecondary),
+                                    TextStyle(color: getTextSecondary(context)),
                               ),
                             ),
                             DataCell(StatusBadge(status: jvm.status)),
@@ -235,8 +294,8 @@ class _DashboardPageState extends State<DashboardPage> {
                             DataCell(
                               Text(
                                 version,
-                                style: const TextStyle(
-                                    fontSize: 12, color: textSecondary),
+                                style: TextStyle(
+                                    fontSize: 12, color: getTextSecondary(context)),
                               ),
                             ),
                             DataCell(
@@ -267,12 +326,156 @@ class _DashboardPageState extends State<DashboardPage> {
     );
   }
 
+  Widget _buildSectionHeader(String title, IconData icon) {
+    return Row(
+      children: [
+        Icon(icon, color: primaryColor, size: 18),
+        const SizedBox(width: 8),
+        Text(
+          title,
+          style: TextStyle(
+            fontSize: 15,
+            fontWeight: FontWeight.w600,
+            color: getTextColor(context),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildJvmMetricCard(Jvm jvm) {
+    final history = _jvmHistories[jvm.pid];
+    final statusColor = jvmStatusColor(jvm.status);
+    final heapData = history?.snapshots
+            .map((s) => s.heapPercent)
+            .toList() ??
+        [];
+    final threadData = history?.snapshots
+            .map((s) => s.threadCount.toDouble())
+            .toList() ??
+        [];
+
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: getSurfaceColor(context),
+        border: Border.all(color: getBorderColor(context)),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // Header with name and status
+          Row(
+            children: [
+              Container(
+                width: 4,
+                height: 28,
+                decoration: BoxDecoration(
+                  color: statusColor,
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      jvm.displayName,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: getTextColor(context),
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                    Text(
+                      'PID ${jvm.pid}',
+                      style: TextStyle(fontSize: 11, color: getTextSecondary(context)),
+                    ),
+                  ],
+                ),
+              ),
+              StatusBadge(status: jvm.status),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Quick stats row
+          Row(
+            children: [
+              _miniMetric('Heap', '${jvm.heapUsagePercent.toStringAsFixed(0)}%',
+                  heapBarColor(jvm.heapUsagePercent)),
+              const SizedBox(width: 16),
+              _miniMetric('Threads', '${jvm.threadCount}', cyanColor),
+              const SizedBox(width: 16),
+              _miniMetric('CPU', '${jvm.cpuUsagePercent.toStringAsFixed(0)}%', purpleColor),
+            ],
+          ),
+          const SizedBox(height: 12),
+
+          // Mini sparklines
+          if (heapData.length >= 2) ...[
+            Row(
+              children: [
+                Expanded(
+                  child: _miniSparkline(heapData, 'Heap',
+                      heapBarColor(jvm.heapUsagePercent)),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _miniSparkline(threadData, 'Threads', cyanColor),
+                ),
+              ],
+            ),
+          ] else
+            Text(
+              'Collecting metrics...',
+              style: TextStyle(
+                  color: getTextSecondary(context).withValues(alpha: 0.6),
+                  fontSize: 11),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _miniMetric(String label, String value, Color color) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          value,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w700,
+            color: color,
+          ),
+        ),
+        Text(
+          label,
+          style: TextStyle(fontSize: 10, color: getTextSecondary(context)),
+        ),
+      ],
+    );
+  }
+
+  Widget _miniSparkline(List<double> data, String label, Color color) {
+    return Sparkline(
+      data: data,
+      lineColor: color,
+      label: label,
+      height: 35,
+    );
+  }
+
   Widget _buildAlertsPanel(AlertProvider alertProvider) {
     final recentAlerts = alertProvider.alerts.take(10).toList();
     return Container(
       decoration: BoxDecoration(
-        color: surfaceColor,
-        border: Border.all(color: borderColor),
+        color: getSurfaceColor(context),
+        border: Border.all(color: getBorderColor(context)),
         borderRadius: BorderRadius.circular(10),
       ),
       padding: const EdgeInsets.all(20),
@@ -285,10 +488,10 @@ class _DashboardPageState extends State<DashboardPage> {
               const SizedBox(width: 8),
               Text(
                 'Active Alerts (${alertProvider.activeCount})',
-                style: const TextStyle(
+                style: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w600,
-                  color: textColor,
+                  color: getTextColor(context),
                 ),
               ),
               const Spacer(),
@@ -296,7 +499,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 TextButton(
                   onPressed: () => alertProvider.clearAlerts(),
                   style: TextButton.styleFrom(
-                    foregroundColor: textSecondary,
+                    foregroundColor: getTextSecondary(context),
                     textStyle: const TextStyle(fontSize: 12),
                   ),
                   child: const Text('Clear All'),
@@ -309,7 +512,7 @@ class _DashboardPageState extends State<DashboardPage> {
                 ? redColor
                 : alert.severity == 'WARNING'
                     ? yellowColor
-                    : textSecondary;
+                    : getTextSecondary(context);
             return Container(
               margin: const EdgeInsets.only(bottom: 6),
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -327,139 +530,18 @@ class _DashboardPageState extends State<DashboardPage> {
                   Expanded(
                     child: Text(
                       alert.message,
-                      style: const TextStyle(color: textColor, fontSize: 12),
+                      style: TextStyle(color: getTextColor(context), fontSize: 12),
                     ),
                   ),
                   const SizedBox(width: 8),
                   Text(
                     timeAgo(alert.timestamp),
-                    style: const TextStyle(color: textSecondary, fontSize: 11),
+                    style: TextStyle(color: getTextSecondary(context), fontSize: 11),
                   ),
                 ],
               ),
             );
           }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTrendsPanel(JvmProvider provider) {
-    return Container(
-      decoration: BoxDecoration(
-        color: surfaceColor,
-        border: Border.all(color: borderColor),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      padding: const EdgeInsets.all(20),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(Icons.trending_up, color: primaryColor, size: 18),
-              const SizedBox(width: 8),
-              Text(
-                'Trends${_history != null ? ' - ${_history!.processName} (PID ${_history!.pid})' : ''}',
-                style: const TextStyle(
-                  fontSize: 15,
-                  fontWeight: FontWeight.w600,
-                  color: textColor,
-                ),
-              ),
-              const Spacer(),
-              OutlinedButton.icon(
-                onPressed: _loadingHistory ? null : _loadTrends,
-                icon: _loadingHistory
-                    ? const SizedBox(
-                        width: 12,
-                        height: 12,
-                        child: CircularProgressIndicator(
-                            strokeWidth: 2, color: primaryColor),
-                      )
-                    : const Icon(Icons.refresh, size: 14),
-                label: const Text('Refresh'),
-                style: OutlinedButton.styleFrom(
-                  foregroundColor: primaryColor,
-                  side: const BorderSide(color: primaryColor),
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  textStyle: const TextStyle(fontSize: 12),
-                  minimumSize: const Size(0, 28),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          if (_history == null || _history!.snapshots.isEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 12),
-              child: Text(
-                'Select a JVM and wait for data collection (15s intervals).',
-                style: TextStyle(color: textSecondary, fontSize: 13),
-              ),
-            )
-          else
-            LayoutBuilder(
-              builder: (context, constraints) {
-                final isWide = constraints.maxWidth > 600;
-                final snapshots = _history!.snapshots;
-                final heapData =
-                    snapshots.map((s) => s.heapPercent).toList();
-                final threadData =
-                    snapshots.map((s) => s.threadCount.toDouble()).toList();
-                final lastSnap = snapshots.last;
-
-                if (isWide) {
-                  return Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(
-                        child: Sparkline(
-                          data: heapData,
-                          lineColor: _heapSparkColor(lastSnap.heapPercent),
-                          label: 'Heap Usage',
-                          currentValue:
-                              '${lastSnap.heapPercent.toStringAsFixed(1)}%',
-                          height: 80,
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Sparkline(
-                          data: threadData,
-                          lineColor: cyanColor,
-                          label: 'Thread Count',
-                          currentValue: '${lastSnap.threadCount}',
-                          height: 80,
-                        ),
-                      ),
-                    ],
-                  );
-                } else {
-                  return Column(
-                    children: [
-                      Sparkline(
-                        data: heapData,
-                        lineColor: _heapSparkColor(lastSnap.heapPercent),
-                        label: 'Heap Usage',
-                        currentValue:
-                            '${lastSnap.heapPercent.toStringAsFixed(1)}%',
-                        height: 70,
-                      ),
-                      const SizedBox(height: 12),
-                      Sparkline(
-                        data: threadData,
-                        lineColor: cyanColor,
-                        label: 'Thread Count',
-                        currentValue: '${lastSnap.threadCount}',
-                        height: 70,
-                      ),
-                    ],
-                  );
-                }
-              },
-            ),
         ],
       ),
     );

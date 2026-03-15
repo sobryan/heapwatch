@@ -27,10 +27,12 @@ public class JfrService {
     private String outputDir;
 
     private final SimpMessagingTemplate messagingTemplate;
+    private final NotificationService notificationService;
     private final Map<String, JfrRecording> recordings = new ConcurrentHashMap<>();
 
-    public JfrService(SimpMessagingTemplate messagingTemplate) {
+    public JfrService(SimpMessagingTemplate messagingTemplate, NotificationService notificationService) {
         this.messagingTemplate = messagingTemplate;
+        this.notificationService = notificationService;
     }
     private final ExecutorService executor = Executors.newCachedThreadPool(r -> {
         Thread t = new Thread(r, "jfr-worker");
@@ -130,6 +132,12 @@ public class JfrService {
                 recording.setFileSizeBytes(Files.size(outputPath));
                 recording.setStatus("COMPLETED");
                 log.info("JFR recording {} completed: {} bytes", recording.getId(), recording.getFileSizeBytes());
+                notificationService.addNotification("RECORDING",
+                        "JFR Recording Completed",
+                        recording.getProfileType() + " recording for " + recording.getProcessName() +
+                                " (PID " + recording.getPid() + ") completed - " +
+                                formatFileSize(recording.getFileSizeBytes()),
+                        "INFO");
             } else {
                 recording.setStatus("FAILED");
                 recording.setError("Output file not created");
@@ -178,5 +186,12 @@ public class JfrService {
         if (!Files.exists(dir)) {
             Files.createDirectories(dir);
         }
+    }
+
+    private String formatFileSize(long bytes) {
+        if (bytes < 1024) return bytes + " B";
+        if (bytes < 1024 * 1024) return String.format("%.1f KB", bytes / 1024.0);
+        if (bytes < 1024L * 1024 * 1024) return String.format("%.1f MB", bytes / (1024.0 * 1024));
+        return String.format("%.1f GB", bytes / (1024.0 * 1024 * 1024));
     }
 }

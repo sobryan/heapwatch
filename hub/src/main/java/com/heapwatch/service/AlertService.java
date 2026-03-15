@@ -21,6 +21,7 @@ public class AlertService {
     private static final int MAX_ALERTS = 500;
 
     private final JvmDiscoveryService discoveryService;
+    private final NotificationService notificationService;
 
     private final List<Map<String, Object>> alertRules = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> triggeredAlerts = new CopyOnWriteArrayList<>();
@@ -28,8 +29,9 @@ public class AlertService {
     // Track last alert time per rule+pid to avoid flooding
     private final Map<String, Instant> lastAlertTime = new ConcurrentHashMap<>();
 
-    public AlertService(JvmDiscoveryService discoveryService) {
+    public AlertService(JvmDiscoveryService discoveryService, NotificationService notificationService) {
         this.discoveryService = discoveryService;
+        this.notificationService = notificationService;
         initDefaultRules();
     }
 
@@ -97,6 +99,10 @@ public class AlertService {
                     triggeredAlerts.add(0, alert); // newest first
                     lastAlertTime.put(key, now);
                     log.info("Alert triggered: {}", alert.get("message"));
+
+                    // Push to notification center
+                    notificationService.addNotification("ALERT", ruleName,
+                            (String) alert.get("message"), severity);
 
                     // Evict old alerts
                     while (triggeredAlerts.size() > MAX_ALERTS) {
