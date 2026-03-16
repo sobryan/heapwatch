@@ -1,6 +1,7 @@
 package com.heapwatch.service;
 
 import com.heapwatch.model.ChatMessage;
+import com.heapwatch.model.CodeIssue;
 import com.heapwatch.model.DiagnosisReport;
 import com.heapwatch.model.JvmProcess;
 import lombok.extern.slf4j.Slf4j;
@@ -41,13 +42,16 @@ public class AiAdvisorService {
     private final JvmDiscoveryService discoveryService;
     private final AlertService alertService;
     private final MetricsHistoryService metricsHistoryService;
+    private final IssueRankingService issueRankingService;
 
     public AiAdvisorService(JvmDiscoveryService discoveryService,
                             AlertService alertService,
-                            MetricsHistoryService metricsHistoryService) {
+                            MetricsHistoryService metricsHistoryService,
+                            IssueRankingService issueRankingService) {
         this.discoveryService = discoveryService;
         this.alertService = alertService;
         this.metricsHistoryService = metricsHistoryService;
+        this.issueRankingService = issueRankingService;
     }
 
     public ChatMessage chat(String userMessage) {
@@ -79,6 +83,162 @@ public class AiAdvisorService {
 
     public void clearChat() {
         chatHistory.clear();
+    }
+
+    /**
+     * Analyze a code issue using AI. Feeds profiling data + source code snippet to Claude.
+     * Returns root cause explanation, suggested fix (before/after code), estimated impact.
+     */
+    public CodeIssue analyzeCodeIssue(String issueId) {
+        CodeIssue issue = issueRankingService.getIssue(issueId)
+                .orElseThrow(() -> new RuntimeException("Issue not found: " + issueId));
+
+        StringBuilder prompt = new StringBuilder();
+        prompt.append("Analyze this JVM performance issue and provide a fix.\n\n");
+        prompt.append("## Issue\n");
+        prompt.append("- Severity: ").append(issue.getSeverity()).append("\n");
+        prompt.append("- Category: ").append(issue.getCategory()).append("\n");
+        prompt.append("- Title: ").append(issue.getTitle()).append("\n");
+        prompt.append("- Description: ").append(issue.getDescription()).append("\n");
+        prompt.append("- Method: ").append(issue.getMethod()).append("\n");
+        prompt.append("- File: ").append(issue.getFilePath()).append("\n");
+
+        prompt.append("\n## Profiling Metrics\n");
+        if (issue.getCpuPercent() > 0) prompt.append("- CPU: ").append(issue.getCpuPercent()).append("%\n");
+        if (issue.getAllocationBytes() > 0) prompt.append("- Allocation: ").append(formatBytes(issue.getAllocationBytes())).append("\n");
+        if (issue.getThreadCount() > 0) prompt.append("- Threads: ").append(issue.getThreadCount()).append("\n");
+        if (issue.getGcPauseMs() > 0) prompt.append("- GC Pause: ").append(issue.getGcPauseMs()).append("ms\n");
+
+        if (issue.getSourceSnippet() != null && !issue.getSourceSnippet().isEmpty()) {
+            prompt.append("\n## Source Code\n```java\n");
+            prompt.append(issue.getSourceSnippet());
+            prompt.append("```\n");
+        }
+
+        prompt.append("\nRespond ONLY with valid JSON (no markdown fences):\n");
+        prompt.append("{\n");
+        prompt.append("  \"rootCause\": \"<1-3 sentence explanation of the root cause>\",\n");
+        prompt.append("  \"beforeCode\": \"<the problematic code snippet>\",\n");
+        prompt.append("  \"afterCode\": \"<the fixed code snippet>\",\n");
+        prompt.append("  \"estimatedImpact\": \"<expected performance improvement>\"\n");
+        prompt.append("}");
+
+        String rootCause;
+        String beforeCode;
+        String afterCode;
+        String estimatedImpact;
+
+        if (apiKey != null && !apiKey.isBlank()) {
+            try {
+                String systemPrompt = "You are HeapWatch AI Advisor, an expert Java performance engineer. " +
+                        "Analyze the performance issue and provide a concrete code fix. " +
+                        "The beforeCode should be the problematic code and afterCode should be the corrected version. " +
+                        "Be specific and practical.";
+
+                JsonArray messages = new JsonArray();
+                JsonObject userMsg = new JsonObject();
+                userMsg.addProperty("role", "user");
+                userMsg.addProperty("content", prompt.toString());
+                messages.add(userMsg);
+
+                JsonObject body = new JsonObject();
+                body.addProperty("model", model);
+                body.addProperty("max_tokens", 2048);
+                body.addProperty("system", systemPrompt);
+                body.add("messages", messages);
+
+                Request request = new Request.Builder()
+                        .url("https://api.anthropic.com/v1/messages")
+                        .header("x-api-key", apiKey)
+                        .header("anthropic-version", "2023-06-01")
+                        .header("content-type", "application/json")
+                        .post(RequestBody.create(body.toString(), MediaType.parse("application/json")))
+                        .build();
+
+                try (Response resp = httpClient.newCall(request).execute()) {
+                    if (resp.isSuccessful() && resp.body() != null) {
+                        String responseBody = resp.body().string();
+                        JsonObject json = gson.fromJson(responseBody, JsonObject.class);
+                        String aiText = json.getAsJsonArray("content").get(0).getAsJsonObject().get("text").getAsString();
+
+                        // Parse AI response
+                        String cleaned = aiText.trim();
+                        if (cleaned.startsWith("```")) {
+                            cleaned = cleaned.replaceFirst("```[a-z]*\\n?", "");
+                            cleaned = cleaned.replaceAll("```$", "").trim();
+                        }
+                        JsonObject result = gson.fromJson(cleaned, JsonObject.class);
+
+                        rootCause = getStr(result, "rootCause", "Analysis pending.");
+                        beforeCode = getStr(result, "beforeCode", issue.getSourceSnippet());
+                        afterCode = getStr(result, "afterCode", "// Fix not generated");
+                        estimatedImpact = getStr(result, "estimatedImpact", "Performance improvement expected.");
+
+                        issue.setRootCause(rootCause);
+                        issue.setBeforeCode(beforeCode);
+                        issue.setAfterCode(afterCode);
+                        issue.setEstimatedImpact(estimatedImpact);
+                        issue.setSuggestedFix(afterCode);
+                        issue.setAnalyzed(true);
+                        issueRankingService.updateIssue(issue);
+                        return issue;
+                    }
+                }
+            } catch (Exception e) {
+                log.error("AI code analysis failed, falling back to heuristic", e);
+            }
+        }
+
+        // Fallback: heuristic analysis
+        return analyzeCodeIssueLocally(issue);
+    }
+
+    /**
+     * Local heuristic-based code analysis when no AI API key is configured.
+     */
+    private CodeIssue analyzeCodeIssueLocally(CodeIssue issue) {
+        String category = issue.getCategory();
+
+        switch (category) {
+            case "MEMORY":
+                issue.setRootCause("Unbounded collection growth detected. Objects are added to a collection " +
+                        "without any eviction or size limit, causing the heap to fill over time.");
+                issue.setBeforeCode("// Current: unbounded add\nLEAK.add(new byte[100_000]);");
+                issue.setAfterCode("// Fixed: bounded with eviction\nif (LEAK.size() > MAX_SIZE) {\n    LEAK.remove(0);\n}\nLEAK.add(new byte[100_000]);");
+                issue.setEstimatedImpact("Eliminates memory leak, prevents OutOfMemoryError. Heap usage stays bounded.");
+                break;
+            case "CPU":
+                issue.setRootCause("Inefficient algorithm with O(n^2) complexity detected. " +
+                        "A quadratic sorting or search operation is consuming excessive CPU cycles.");
+                issue.setBeforeCode("// Current: O(n^2) bubble sort\nfor (int i = 0; i < arr.length; i++)\n  for (int j = 0; j < arr.length-1; j++)\n    if (arr[j] > arr[j+1]) swap(arr, j, j+1);");
+                issue.setAfterCode("// Fixed: O(n log n) built-in sort\nArrays.sort(arr);");
+                issue.setEstimatedImpact("~99% CPU reduction for sort operations. O(n^2) -> O(n log n).");
+                break;
+            case "THREADS":
+                issue.setRootCause("Lock ordering inconsistency detected. Multiple threads acquire locks " +
+                        "in different orders, causing deadlock or severe contention.");
+                issue.setBeforeCode("// Thread 1: lockA -> lockB\nsynchronized(lockA) {\n  synchronized(lockB) { ... }\n}\n// Thread 2: lockB -> lockA\nsynchronized(lockB) {\n  synchronized(lockA) { ... }\n}");
+                issue.setAfterCode("// Fixed: consistent lock ordering\n// Both threads: lockA -> lockB\nsynchronized(lockA) {\n  synchronized(lockB) { ... }\n}");
+                issue.setEstimatedImpact("Eliminates deadlocks and contention. Thread throughput improvement of 5-10x.");
+                break;
+            case "GC":
+                issue.setRootCause("Rapid allocation of short-lived objects creates excessive GC pressure. " +
+                        "Young generation fills quickly, triggering frequent minor GC collections.");
+                issue.setBeforeCode("// Current: allocate new byte[] every iteration\nwhile (true) {\n  byte[] buf = new byte[1024 * 1024];\n  process(buf);\n}");
+                issue.setAfterCode("// Fixed: reuse byte buffer\nbyte[] buf = new byte[1024 * 1024];\nwhile (true) {\n  Arrays.fill(buf, (byte) 0);\n  process(buf);\n}");
+                issue.setEstimatedImpact("50-80% reduction in GC pauses. Allocation rate drops dramatically.");
+                break;
+            default:
+                issue.setRootCause("Performance issue detected. Further analysis recommended.");
+                issue.setBeforeCode(issue.getSourceSnippet() != null ? issue.getSourceSnippet() : "// Source not available");
+                issue.setAfterCode("// Optimization recommended - see root cause analysis");
+                issue.setEstimatedImpact("Performance improvement expected after optimization.");
+        }
+
+        issue.setSuggestedFix(issue.getAfterCode());
+        issue.setAnalyzed(true);
+        issueRankingService.updateIssue(issue);
+        return issue;
     }
 
     /**

@@ -7,9 +7,11 @@ import 'providers/chat_provider.dart';
 import 'providers/alert_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/issues_provider.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/profiler_page.dart';
 import 'pages/chat_page.dart';
+import 'pages/issues_page.dart';
 import 'pages/settings_page.dart';
 import 'widgets/jvm_sidebar_card.dart';
 import 'widgets/notification_panel.dart';
@@ -34,6 +36,7 @@ class HeapWatchApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => AlertProvider(apiService)),
         ChangeNotifierProvider(create: (_) => NotificationProvider(apiService)),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
+        ChangeNotifierProvider(create: (_) => IssuesProvider(apiService)),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
@@ -150,6 +153,10 @@ class _AppShellState extends State<AppShell> {
                   icon: Icon(Icons.bar_chart),
                   label: 'Profiler',
                 ),
+                const BottomNavigationBarItem(
+                  icon: Icon(Icons.bug_report),
+                  label: 'Issues',
+                ),
                 BottomNavigationBarItem(
                   icon: _buildAlertBadgeIcon(
                       Icons.smart_toy, alertProvider.activeCount, isBottom: true),
@@ -204,8 +211,9 @@ class _AppShellState extends State<AppShell> {
             const SizedBox(width: 32),
             _tabButton('Dashboard', 0),
             _tabButton('Profiler', 1),
-            _tabButton('AI Advisor', 2),
-            _tabButton('Settings', 3),
+            _tabButton('Issues', 2),
+            _tabButton('AI Advisor', 3),
+            _tabButton('Settings', 4),
           ],
 
           const Spacer(),
@@ -491,8 +499,10 @@ class _AppShellState extends State<AppShell> {
       case 1:
         return const ProfilerPage();
       case 2:
-        return const ChatPage();
+        return const IssuesPage();
       case 3:
+        return const ChatPage();
+      case 4:
         return const SettingsPage();
       default:
         return DashboardPage(onTabSwitch: _switchTab);

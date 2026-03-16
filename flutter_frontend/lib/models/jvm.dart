@@ -675,6 +675,186 @@ class HistogramDiff {
   }
 }
 
+/// Code issue identified by profiling and mapped to source code
+class CodeIssue {
+  final String id;
+  final String severity; // CRITICAL, HIGH, MEDIUM, LOW
+  final String category; // MEMORY, CPU, THREADS, GC, ALGORITHM
+  final String title;
+  final String description;
+  final String? method;
+  final String? filePath;
+  final int lineStart;
+  final int lineEnd;
+  final String? sourceSnippet;
+  final double cpuPercent;
+  final int allocationBytes;
+  final int threadCount;
+  final int gcPauseMs;
+  final int impactScore;
+  final String? rootCause;
+  final String? suggestedFix;
+  final String? beforeCode;
+  final String? afterCode;
+  final String? estimatedImpact;
+  final bool analyzed;
+  final String? prBranch;
+  final String? prTitle;
+  final String? prBody;
+  final String? prDiff;
+  final bool prCreated;
+
+  CodeIssue({
+    required this.id,
+    required this.severity,
+    required this.category,
+    required this.title,
+    required this.description,
+    this.method,
+    this.filePath,
+    this.lineStart = 0,
+    this.lineEnd = 0,
+    this.sourceSnippet,
+    this.cpuPercent = 0,
+    this.allocationBytes = 0,
+    this.threadCount = 0,
+    this.gcPauseMs = 0,
+    this.impactScore = 5,
+    this.rootCause,
+    this.suggestedFix,
+    this.beforeCode,
+    this.afterCode,
+    this.estimatedImpact,
+    this.analyzed = false,
+    this.prBranch,
+    this.prTitle,
+    this.prBody,
+    this.prDiff,
+    this.prCreated = false,
+  });
+
+  factory CodeIssue.fromJson(Map<String, dynamic> json) {
+    return CodeIssue(
+      id: json['id'] ?? '',
+      severity: json['severity'] ?? 'LOW',
+      category: json['category'] ?? 'MEMORY',
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      method: json['method'],
+      filePath: json['filePath'],
+      lineStart: (json['lineStart'] ?? 0).toInt(),
+      lineEnd: (json['lineEnd'] ?? 0).toInt(),
+      sourceSnippet: json['sourceSnippet'],
+      cpuPercent: (json['cpuPercent'] ?? 0).toDouble(),
+      allocationBytes: (json['allocationBytes'] ?? 0).toInt(),
+      threadCount: (json['threadCount'] ?? 0).toInt(),
+      gcPauseMs: (json['gcPauseMs'] ?? 0).toInt(),
+      impactScore: (json['impactScore'] ?? 5).toInt(),
+      rootCause: json['rootCause'],
+      suggestedFix: json['suggestedFix'],
+      beforeCode: json['beforeCode'],
+      afterCode: json['afterCode'],
+      estimatedImpact: json['estimatedImpact'],
+      analyzed: json['analyzed'] ?? false,
+      prBranch: json['prBranch'],
+      prTitle: json['prTitle'],
+      prBody: json['prBody'],
+      prDiff: json['prDiff'],
+      prCreated: json['prCreated'] ?? false,
+    );
+  }
+}
+
+/// Repository connection status
+class RepoStatus {
+  final String? repoUrl;
+  final String? branch;
+  final String? localPath;
+  final bool connected;
+  final int indexedFiles;
+  final int indexedClasses;
+  final String? lastIndexed;
+  final String? error;
+
+  RepoStatus({
+    this.repoUrl,
+    this.branch,
+    this.localPath,
+    this.connected = false,
+    this.indexedFiles = 0,
+    this.indexedClasses = 0,
+    this.lastIndexed,
+    this.error,
+  });
+
+  factory RepoStatus.fromJson(Map<String, dynamic> json) {
+    return RepoStatus(
+      repoUrl: json['repoUrl'],
+      branch: json['branch'],
+      localPath: json['localPath'],
+      connected: json['connected'] ?? false,
+      indexedFiles: (json['indexedFiles'] ?? 0).toInt(),
+      indexedClasses: (json['indexedClasses'] ?? 0).toInt(),
+      lastIndexed: json['lastIndexed'],
+      error: json['error'],
+    );
+  }
+}
+
+/// PR plan generated for a code fix
+class PrPlan {
+  final String issueId;
+  final String status;
+  final String branch;
+  final String prTitle;
+  final String prBody;
+  final String commitMessage;
+  final String diff;
+  final String? filePath;
+  final String? severity;
+  final String? category;
+  final String? createdAt;
+  final String? beforeCode;
+  final String? afterCode;
+  final String? estimatedImpact;
+
+  PrPlan({
+    required this.issueId,
+    required this.status,
+    required this.branch,
+    required this.prTitle,
+    required this.prBody,
+    required this.commitMessage,
+    required this.diff,
+    this.filePath,
+    this.severity,
+    this.category,
+    this.createdAt,
+    this.beforeCode,
+    this.afterCode,
+    this.estimatedImpact,
+  });
+
+  factory PrPlan.fromJson(Map<String, dynamic> json) {
+    return PrPlan(
+      issueId: json['issueId'] ?? '',
+      status: json['status'] ?? 'PLANNED',
+      branch: json['branch'] ?? '',
+      prTitle: json['prTitle'] ?? '',
+      prBody: json['prBody'] ?? '',
+      commitMessage: json['commitMessage'] ?? '',
+      diff: json['diff'] ?? '',
+      filePath: json['filePath'],
+      severity: json['severity'],
+      category: json['category'],
+      createdAt: json['createdAt'],
+      beforeCode: json['beforeCode'],
+      afterCode: json['afterCode'],
+      estimatedImpact: json['estimatedImpact'],
+    );
+  }
+}
+
 /// Alert rule configuration
 class AlertRule {
   final String id;

@@ -225,6 +225,51 @@ class ApiService {
     return HistogramDiff.fromJson(data);
   }
 
+  // Repository
+  Future<RepoStatus> connectRepo(String repoUrl, {String branch = 'main'}) async {
+    final data = await _request('POST', '/api/repo/connect', body: {
+      'repoUrl': repoUrl,
+      'branch': branch,
+    });
+    return RepoStatus.fromJson(data);
+  }
+
+  Future<RepoStatus> getRepoStatus() async {
+    final data = await _request('GET', '/api/repo/status');
+    return RepoStatus.fromJson(data);
+  }
+
+  Future<List<CodeIssue>> mapIssues() async {
+    final data = await _request('GET', '/api/repo/map-issues');
+    return (data as List).map((e) => CodeIssue.fromJson(e)).toList();
+  }
+
+  // Issues
+  Future<List<CodeIssue>> getIssues() async {
+    final data = await _request('GET', '/api/issues');
+    return (data as List).map((e) => CodeIssue.fromJson(e)).toList();
+  }
+
+  Future<CodeIssue> getIssue(String id) async {
+    final data = await _request('GET', '/api/issues/$id');
+    return CodeIssue.fromJson(data);
+  }
+
+  Future<CodeIssue> analyzeIssue(String id) async {
+    final data = await _request('POST', '/api/issues/$id/analyze');
+    return CodeIssue.fromJson(data);
+  }
+
+  Future<PrPlan> createPr(String issueId) async {
+    final data = await _request('POST', '/api/issues/$issueId/create-pr');
+    return PrPlan.fromJson(data);
+  }
+
+  Future<List<PrPlan>> getPrPlans() async {
+    final data = await _request('GET', '/api/issues/prs');
+    return (data as List).map((e) => PrPlan.fromJson(e)).toList();
+  }
+
   // Notifications
   Future<Map<String, dynamic>> getNotifications() async {
     final data = await _request('GET', '/api/notifications');
