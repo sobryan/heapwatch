@@ -270,6 +270,57 @@ class ApiService {
     return (data as List).map((e) => PrPlan.fromJson(e)).toList();
   }
 
+  // SRE Agent
+  Future<List<SreIncident>> getSreIncidents() async {
+    final data = await _request('GET', '/api/sre/incidents');
+    return (data as List).map((e) => SreIncident.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<SreIncident> getSreIncident(String id) async {
+    final data = await _request('GET', '/api/sre/incidents/$id');
+    return SreIncident.fromJson(data);
+  }
+
+  Future<SreIncident> resolveSreIncident(String id) async {
+    final data = await _request('POST', '/api/sre/incidents/$id/resolve');
+    return SreIncident.fromJson(data);
+  }
+
+  Future<Map<String, dynamic>> getSreStatus() async {
+    final data = await _request('GET', '/api/sre/status');
+    return Map<String, dynamic>.from(data);
+  }
+
+  Future<Map<String, dynamic>> toggleSreAgent() async {
+    final data = await _request('POST', '/api/sre/toggle');
+    return Map<String, dynamic>.from(data);
+  }
+
+  // Alert Integrations
+  Future<List<AlertIntegrationChannel>> getAlertIntegrations() async {
+    final data = await _request('GET', '/api/alerts/integrations');
+    return (data as List).map((e) => AlertIntegrationChannel.fromJson(e as Map<String, dynamic>)).toList();
+  }
+
+  Future<AlertIntegrationChannel> addAlertIntegration(Map<String, dynamic> integration) async {
+    final data = await _request('POST', '/api/alerts/integrations', body: integration);
+    return AlertIntegrationChannel.fromJson(data);
+  }
+
+  Future<AlertIntegrationChannel> updateAlertIntegration(String id, Map<String, dynamic> updates) async {
+    final data = await _request('PUT', '/api/alerts/integrations/$id', body: updates);
+    return AlertIntegrationChannel.fromJson(data);
+  }
+
+  Future<void> deleteAlertIntegration(String id) async {
+    await _request('DELETE', '/api/alerts/integrations/$id');
+  }
+
+  Future<Map<String, dynamic>> testAlertIntegration(String id) async {
+    final data = await _request('POST', '/api/alerts/integrations/$id/test');
+    return Map<String, dynamic>.from(data);
+  }
+
   // Notifications
   Future<Map<String, dynamic>> getNotifications() async {
     final data = await _request('GET', '/api/notifications');

@@ -8,10 +8,12 @@ import 'providers/alert_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/theme_provider.dart';
 import 'providers/issues_provider.dart';
+import 'providers/sre_provider.dart';
 import 'pages/dashboard_page.dart';
 import 'pages/profiler_page.dart';
 import 'pages/chat_page.dart';
 import 'pages/issues_page.dart';
+import 'pages/sre_page.dart';
 import 'pages/settings_page.dart';
 import 'widgets/jvm_sidebar_card.dart';
 import 'widgets/notification_panel.dart';
@@ -37,6 +39,7 @@ class HeapWatchApp extends StatelessWidget {
         ChangeNotifierProvider(create: (_) => NotificationProvider(apiService)),
         ChangeNotifierProvider(create: (_) => ThemeProvider()),
         ChangeNotifierProvider(create: (_) => IssuesProvider(apiService)),
+        ChangeNotifierProvider(create: (_) => SreProvider(apiService)),
       ],
       child: Consumer<ThemeProvider>(
         builder: (context, themeProvider, _) {
@@ -163,6 +166,10 @@ class _AppShellState extends State<AppShell> {
                   label: 'AI Advisor',
                 ),
                 const BottomNavigationBarItem(
+                  icon: Icon(Icons.security),
+                  label: 'SRE',
+                ),
+                const BottomNavigationBarItem(
                   icon: Icon(Icons.settings),
                   label: 'Settings',
                 ),
@@ -213,7 +220,8 @@ class _AppShellState extends State<AppShell> {
             _tabButton('Profiler', 1),
             _tabButton('Issues', 2),
             _tabButton('AI Advisor', 3),
-            _tabButton('Settings', 4),
+            _tabButton('SRE', 4),
+            _tabButton('Settings', 5),
           ],
 
           const Spacer(),
@@ -503,6 +511,8 @@ class _AppShellState extends State<AppShell> {
       case 3:
         return const ChatPage();
       case 4:
+        return const SrePage();
+      case 5:
         return const SettingsPage();
       default:
         return DashboardPage(onTabSwitch: _switchTab);

@@ -22,6 +22,7 @@ public class AlertService {
 
     private final JvmDiscoveryService discoveryService;
     private final NotificationService notificationService;
+    private final AlertIntegrationService alertIntegrationService;
 
     private final List<Map<String, Object>> alertRules = new CopyOnWriteArrayList<>();
     private final List<Map<String, Object>> triggeredAlerts = new CopyOnWriteArrayList<>();
@@ -29,9 +30,12 @@ public class AlertService {
     // Track last alert time per rule+pid to avoid flooding
     private final Map<String, Instant> lastAlertTime = new ConcurrentHashMap<>();
 
-    public AlertService(JvmDiscoveryService discoveryService, NotificationService notificationService) {
+    public AlertService(JvmDiscoveryService discoveryService,
+                        NotificationService notificationService,
+                        AlertIntegrationService alertIntegrationService) {
         this.discoveryService = discoveryService;
         this.notificationService = notificationService;
+        this.alertIntegrationService = alertIntegrationService;
         initDefaultRules();
     }
 
@@ -104,6 +108,9 @@ public class AlertService {
                     notificationService.addNotification("ALERT", ruleName,
                             (String) alert.get("message"), severity);
 
+                    // Dispatch to integration channels based on escalation
+                    dispatchAlertToIntegrations(alert);
+
                     // Evict old alerts
                     while (triggeredAlerts.size() > MAX_ALERTS) {
                         triggeredAlerts.remove(triggeredAlerts.size() - 1);
@@ -163,5 +170,39 @@ public class AlertService {
 
     public void clearAlerts() {
         triggeredAlerts.clear();
+    }
+
+    /**
+     * Dispatch alert to integration channels using escalation policy:
+     * LOW/WARNING -> webhook only, MEDIUM -> webhook+email,
+     * HIGH/CRITICAL -> all channels.
+     */
+    private void dispatchAlertToIntegrations(Map<String, Object> alert) {
+        try {
+            // Build a lightweight SreIncident-like object for the integration service
+            com.heapwatch.model.SreIncident incident = com.heapwatch.model.SreIncident.builder()
+                    .id((String) alert.get("id"))
+                    .pid(((Number) alert.get("pid")).intValue())
+                    .processName((String) alert.get("processName"))
+                    .severity(mapAlertSeverityToEscalation((String) alert.get("severity")))
+                    .anomalyType("ALERT_RULE")
+                    .title((String) alert.get("ruleName"))
+                    .description((String) alert.get("message"))
+                    .recommendedFix("Check alert rule: " + alert.get("ruleName"))
+                    .affectedJvm(alert.get("processName") + " (PID " + alert.get("pid") + ")")
+                    .createdAt((String) alert.get("timestamp"))
+                    .build();
+            alertIntegrationService.dispatchIncident(incident);
+        } catch (Exception e) {
+            // Don't let integration failures break alerting
+        }
+    }
+
+    private String mapAlertSeverityToEscalation(String alertSeverity) {
+        return switch (alertSeverity) {
+            case "CRITICAL" -> "CRITICAL";
+            case "WARNING" -> "MEDIUM";
+            default -> "LOW";
+        };
     }
 }

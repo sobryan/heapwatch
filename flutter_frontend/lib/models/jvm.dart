@@ -855,6 +855,137 @@ class PrPlan {
   }
 }
 
+/// SRE Incident detected by autonomous monitoring
+class SreIncident {
+  final String id;
+  final int pid;
+  final String processName;
+  final String status; // OPEN, INVESTIGATING, RESOLVED
+  final String severity; // LOW, MEDIUM, HIGH, CRITICAL
+  final String anomalyType;
+  final String title;
+  final String description;
+  final String? diagnosis;
+  final String? recommendedFix;
+  final String? affectedJvm;
+  final String? createdAt;
+  final String? updatedAt;
+  final String? resolvedAt;
+  final List<IncidentEvent> timeline;
+
+  SreIncident({
+    required this.id,
+    required this.pid,
+    required this.processName,
+    required this.status,
+    required this.severity,
+    required this.anomalyType,
+    required this.title,
+    required this.description,
+    this.diagnosis,
+    this.recommendedFix,
+    this.affectedJvm,
+    this.createdAt,
+    this.updatedAt,
+    this.resolvedAt,
+    this.timeline = const [],
+  });
+
+  factory SreIncident.fromJson(Map<String, dynamic> json) {
+    final events = (json['timeline'] as List? ?? [])
+        .map((e) => IncidentEvent.fromJson(e as Map<String, dynamic>))
+        .toList();
+    return SreIncident(
+      id: json['id'] ?? '',
+      pid: (json['pid'] ?? 0).toInt(),
+      processName: json['processName'] ?? '',
+      status: json['status'] ?? 'OPEN',
+      severity: json['severity'] ?? 'LOW',
+      anomalyType: json['anomalyType'] ?? '',
+      title: json['title'] ?? '',
+      description: json['description'] ?? '',
+      diagnosis: json['diagnosis'],
+      recommendedFix: json['recommendedFix'],
+      affectedJvm: json['affectedJvm'],
+      createdAt: json['createdAt'],
+      updatedAt: json['updatedAt'],
+      resolvedAt: json['resolvedAt'],
+      timeline: events,
+    );
+  }
+}
+
+class IncidentEvent {
+  final String timestamp;
+  final String type;
+  final String message;
+
+  IncidentEvent({
+    required this.timestamp,
+    required this.type,
+    required this.message,
+  });
+
+  factory IncidentEvent.fromJson(Map<String, dynamic> json) {
+    return IncidentEvent(
+      timestamp: json['timestamp'] ?? '',
+      type: json['type'] ?? '',
+      message: json['message'] ?? '',
+    );
+  }
+}
+
+/// Alert integration channel configuration
+class AlertIntegrationChannel {
+  final String id;
+  final String name;
+  final String type; // WEBHOOK, GITHUB_ISSUES, EMAIL
+  final Map<String, String> config;
+  final bool enabled;
+  final String? createdAt;
+  final String? lastTestedAt;
+  final String? lastTestResult;
+
+  AlertIntegrationChannel({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.config,
+    this.enabled = true,
+    this.createdAt,
+    this.lastTestedAt,
+    this.lastTestResult,
+  });
+
+  factory AlertIntegrationChannel.fromJson(Map<String, dynamic> json) {
+    final configMap = <String, String>{};
+    if (json['config'] != null) {
+      (json['config'] as Map<String, dynamic>).forEach((k, v) {
+        configMap[k] = v?.toString() ?? '';
+      });
+    }
+    return AlertIntegrationChannel(
+      id: json['id'] ?? '',
+      name: json['name'] ?? '',
+      type: json['type'] ?? 'WEBHOOK',
+      config: configMap,
+      enabled: json['enabled'] ?? true,
+      createdAt: json['createdAt'],
+      lastTestedAt: json['lastTestedAt'],
+      lastTestResult: json['lastTestResult'],
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'type': type,
+      'config': config,
+      'enabled': enabled,
+    };
+  }
+}
+
 /// Alert rule configuration
 class AlertRule {
   final String id;

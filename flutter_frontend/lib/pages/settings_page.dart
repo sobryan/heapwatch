@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../models/jvm.dart';
+import '../providers/sre_provider.dart';
 import '../providers/theme_provider.dart';
 import '../services/api_service.dart';
 import '../theme.dart';
@@ -285,6 +287,10 @@ class _SettingsPageState extends State<SettingsPage> {
               ),
             ],
           ),
+          const SizedBox(height: 20),
+
+          // Alert Integrations Section
+          _IntegrationsSection(),
           const SizedBox(height: 24),
 
           // Save button
@@ -370,6 +376,257 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// Alert Integrations management section for the Settings page.
+class _IntegrationsSection extends StatefulWidget {
+  @override
+  State<_IntegrationsSection> createState() => _IntegrationsSectionState();
+}
+
+class _IntegrationsSectionState extends State<_IntegrationsSection> {
+  bool _loaded = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      context.read<SreProvider>().loadIntegrations();
+      setState(() => _loaded = true);
+    });
+  }
+
+  void _showAddDialog() {
+    final nameCtrl = TextEditingController();
+    final urlCtrl = TextEditingController();
+    String type = 'WEBHOOK';
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(builder: (ctx, setDialogState) {
+          return AlertDialog(
+            title: const Text('Add Integration', style: TextStyle(fontSize: 16)),
+            content: SizedBox(
+              width: 400,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  TextField(
+                    controller: nameCtrl,
+                    decoration: const InputDecoration(labelText: 'Name'),
+                    style: TextStyle(fontSize: 13, color: getTextColor(context)),
+                  ),
+                  const SizedBox(height: 12),
+                  DropdownButtonFormField<String>(
+                    value: type,
+                    decoration: const InputDecoration(labelText: 'Type'),
+                    style: TextStyle(fontSize: 13, color: getTextColor(context)),
+                    items: const [
+                      DropdownMenuItem(value: 'WEBHOOK', child: Text('Webhook')),
+                      DropdownMenuItem(value: 'GITHUB_ISSUES', child: Text('GitHub Issues')),
+                      DropdownMenuItem(value: 'EMAIL', child: Text('Email')),
+                    ],
+                    onChanged: (v) {
+                      if (v != null) setDialogState(() => type = v);
+                    },
+                  ),
+                  const SizedBox(height: 12),
+                  TextField(
+                    controller: urlCtrl,
+                    decoration: InputDecoration(
+                      labelText: type == 'WEBHOOK'
+                          ? 'Webhook URL'
+                          : type == 'GITHUB_ISSUES'
+                              ? 'Repo (owner/repo)'
+                              : 'Email Address',
+                    ),
+                    style: TextStyle(fontSize: 13, color: getTextColor(context)),
+                  ),
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Cancel'),
+              ),
+              FilledButton(
+                onPressed: () {
+                  final config = <String, String>{};
+                  if (type == 'WEBHOOK') {
+                    config['url'] = urlCtrl.text;
+                  } else if (type == 'GITHUB_ISSUES') {
+                    config['repo'] = urlCtrl.text;
+                    config['token'] = '';
+                  } else {
+                    config['to'] = urlCtrl.text;
+                  }
+                  context.read<SreProvider>().addIntegration({
+                    'name': nameCtrl.text,
+                    'type': type,
+                    'config': config,
+                    'enabled': true,
+                  });
+                  Navigator.pop(ctx);
+                },
+                style: FilledButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: bgColor,
+                ),
+                child: const Text('Add'),
+              ),
+            ],
+          );
+        });
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final sre = context.watch<SreProvider>();
+    final integrations = sre.integrations;
+
+    return Container(
+      width: double.infinity,
+      decoration: BoxDecoration(
+        color: surfaceColor,
+        border: Border.all(color: borderColor),
+        borderRadius: BorderRadius.circular(10),
+      ),
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.notifications_active, color: primaryColor, size: 16),
+              const SizedBox(width: 8),
+              const Text(
+                'Alert Integrations',
+                style: TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.w600,
+                  color: textColor,
+                ),
+              ),
+              const Spacer(),
+              OutlinedButton.icon(
+                onPressed: _showAddDialog,
+                icon: const Icon(Icons.add, size: 14),
+                label: const Text('Add'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: primaryColor,
+                  side: const BorderSide(color: primaryColor),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  textStyle: const TextStyle(fontSize: 12),
+                  minimumSize: const Size(0, 28),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Configure notification channels for alerts. Escalation: LOW=webhook, MEDIUM=webhook+email, HIGH/CRITICAL=all channels.',
+            style: TextStyle(fontSize: 12, color: getTextSecondary(context)),
+          ),
+          const SizedBox(height: 16),
+          if (integrations.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Text(
+                'No integrations configured. Add a webhook, GitHub, or email channel.',
+                style: TextStyle(fontSize: 13, color: getTextSecondary(context)),
+              ),
+            )
+          else
+            ...integrations.map((ch) => _buildChannelCard(sre, ch)),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildChannelCard(SreProvider sre, AlertIntegrationChannel ch) {
+    final typeIcon = switch (ch.type) {
+      'WEBHOOK' => Icons.webhook,
+      'GITHUB_ISSUES' => Icons.code,
+      'EMAIL' => Icons.email,
+      _ => Icons.notifications,
+    };
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: bgColor,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: borderColor),
+      ),
+      child: Row(
+        children: [
+          Icon(typeIcon, size: 18, color: primaryColor),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  ch.name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 13,
+                    color: textColor,
+                  ),
+                ),
+                Text(
+                  '${ch.type} - ${ch.enabled ? "Enabled" : "Disabled"}',
+                  style: const TextStyle(fontSize: 11, color: textSecondary),
+                ),
+                if (ch.lastTestResult != null)
+                  Text(
+                    'Last test: ${ch.lastTestResult}',
+                    style: TextStyle(
+                      fontSize: 10,
+                      color: ch.lastTestResult == 'SUCCESS' ? greenColor : redColor,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          // Test button
+          IconButton(
+            onPressed: () async {
+              final result = await sre.testIntegration(ch.id);
+              if (mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(result['message']?.toString() ?? 'Test completed'),
+                    backgroundColor: result['success'] == true ? greenColor : redColor,
+                  ),
+                );
+              }
+            },
+            icon: const Icon(Icons.send, size: 16),
+            color: primaryColor,
+            tooltip: 'Test',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+          // Delete button
+          IconButton(
+            onPressed: () => sre.deleteIntegration(ch.id),
+            icon: const Icon(Icons.delete_outline, size: 16),
+            color: redColor,
+            tooltip: 'Delete',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+          ),
+        ],
+      ),
     );
   }
 }
